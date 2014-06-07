@@ -1,6 +1,6 @@
 CC=gcc
-CFLAGS=-c -g -Wall
-LDFLAGS=-lbcm2835
+CFLAGS=-c -g -Wall -I/usr/src/linux/include
+LDFLAGS=
 SOURCES=main.c
 OBJECTS=$(SOURCES:.c=.o)
 EXECUTABLE=spi-uart
@@ -8,7 +8,7 @@ EXECUTABLE=spi-uart
 all: $(SOURCES) $(EXECUTABLE)
 
 run: all
-	sudo ./$(EXECUTABLE)
+	sudo ./$(EXECUTABLE) -D /dev/spidev0.0 -b 9 -s 243400
 
 clean:
 	rm -f ${EXECUTABLE} ${OBJECTS}
