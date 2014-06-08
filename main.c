@@ -18,10 +18,18 @@
 
 #include <bcm2835.h>
 #include <stdio.h>
+#include "bitop.h"
+
+char reverse_bits(char input) {
+	unsigned char output=0;
+	for(unsigned char i=0;i<8;i++) {
+		change_bit(output,7-i,test_bit(input,i))
+	}
+	return output;
+}
 
 // Writes an number of bytes to SPI
-void bcm2835_spi_writenb_ex(char* tbuf, uint32_t len)
-{
+void spi_uart_tx(char *tbuf, uint32_t len) {
 	volatile uint32_t* paddr = bcm2835_spi0 + BCM2835_SPI0_CS/4;
 	volatile uint32_t* fifo = bcm2835_spi0 + BCM2835_SPI0_FIFO/4;
 
@@ -32,21 +40,26 @@ void bcm2835_spi_writenb_ex(char* tbuf, uint32_t len)
 	// Clear TX and RX fifos
 	bcm2835_peri_set_bits(paddr, BCM2835_SPI0_CS_CLEAR, BCM2835_SPI0_CS_CLEAR);
 	
+	
+	bcm2835_peri_set_bits(paddr, BCM2835_SPI0_CS_LEN, BCM2835_SPI0_CS_LEN); //make it 9 bit
+	
+	
 	// Set TA = 1
 	bcm2835_peri_set_bits(paddr, BCM2835_SPI0_CS_TA, BCM2835_SPI0_CS_TA);
 	
 	uint32_t i;
 	for (i = 0; i < len; i++) {
 		// Maybe wait for TXD
-// 		while (!(bcm2835_peri_read(paddr) & BCM2835_SPI0_CS_TXD))
-// 			;
+		while (!(bcm2835_peri_read(paddr) & BCM2835_SPI0_CS_TXD))
+			;
 		
 		// Write to FIFO, no barrier
-		bcm2835_peri_write_nb(fifo, tbuf[i]);
+		bcm2835_peri_write_nb(fifo, reverse_bits(tbuf[i])+0x000);
 		
 		// Read from FIFO to prevent stalling
-// 		while (bcm2835_peri_read(paddr) & BCM2835_SPI0_CS_RXD)
-// 			(void) bcm2835_peri_read_nb(fifo);
+		while (bcm2835_peri_read(paddr) & BCM2835_SPI0_CS_RXD)
+			(void) bcm2835_peri_read_nb(fifo);
+		bcm2835_gpio_fsel(RPI_GPIO_P1_19, BCM2835_GPIO_FSEL_ALT0);
 	}
 	
 	// Wait for DONE to be set
@@ -57,42 +70,40 @@ void bcm2835_spi_writenb_ex(char* tbuf, uint32_t len)
 	
 	// Set TA = 0, and also set the barrier
 	bcm2835_peri_set_bits(paddr, 0, BCM2835_SPI0_CS_TA);
+	
+	bcm2835_spi_end();
+	
+	bcm2835_gpio_fsel(RPI_GPIO_P1_19, BCM2835_GPIO_FSEL_OUTP); // MOSI
+	bcm2835_gpio_set(RPI_GPIO_P1_19); //idle high
 }
 
-int main(int argc, char **argv)
-{
-	// If you call this, it will not actually access the GPIO
-	// Use for testing
-// 	bcm2835_set_debug(1);
-	
+int main(int argc, char **argv) {
 	if (!bcm2835_init())
 		return 1;
-	
 	bcm2835_spi_begin();
-	bcm2835_spi_setBitOrder(BCM2835_SPI_BIT_ORDER_MSBFIRST);      // The default
-	bcm2835_spi_setDataMode(BCM2835_SPI_MODE0);                   // The default
-	bcm2835_spi_setClockDivider(2170);     // The default
-	bcm2835_spi_chipSelect(BCM2835_SPI_CS0);                      // The default
-	bcm2835_spi_setChipSelectPolarity(BCM2835_SPI_CS0, LOW);      // the default
+	bcm2835_spi_setBitOrder(BCM2835_SPI_BIT_ORDER_MSBFIRST);
+	bcm2835_spi_setDataMode(BCM2835_SPI_MODE3);
+	bcm2835_spi_setClockDivider(2170);
+	bcm2835_spi_chipSelect(BCM2835_SPI_CS0);
+	bcm2835_spi_setChipSelectPolarity(BCM2835_SPI_CS0, LOW);
 	
-	// Send a some bytes to the slave and simultaneously read 
-	// some bytes back from the slave
-	// Most SPI devices expect one or 2 bytes of command, after which they will send back
-	// some data. In such a case you will have the command bytes first in the buffer,
-	// followed by as many 0 bytes as you expect returned data bytes. After the transfer, you 
-	// Can the read the reply bytes from the buffer.
-	// If you tie MISO to MOSI, you should read back what was sent.
+	unsigned char i='a';
 	
 	while(1) {
-		char buf[] = { 0xff,0xff }; // Data to send
-		bcm2835_spi_writenb_ex(buf, sizeof(buf));
-		// buf will now be filled with the data that was read from the slave
-		printf("Read from SPI: 0x%02X, 0x%02X \n", buf[0], buf[1]);
+		char buffer[] = {i++};
+		spi_uart_tx(buffer,sizeof(buffer));
+		
+		if(i>'z')
+			i='\n';
+		
+		if(i==('\n'+1))
+			i='a';
+		
 		bcm2835_delay(10);
 	}
 	
-	bcm2835_spi_end();
 	bcm2835_close();
+	
 	return 0;
 }
 
