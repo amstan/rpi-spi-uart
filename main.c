@@ -20,16 +20,25 @@
 #include <stdio.h>
 #include "bitop.h"
 
-char reverse_bits(char input) {
-	unsigned char output=0;
-	for(unsigned char i=0;i<8;i++) {
-		change_bit(output,7-i,test_bit(input,i))
+unsigned int reverse_bits(unsigned int input) {
+	const unsigned int bit_count = 9;
+	unsigned int output=0;
+	for(unsigned char i=0;i<bit_count;i++) {
+		change_bit(output,(bit_count-1)-i,test_bit(input,i))
 	}
 	return output;
 }
 
+#define START_BIT 0
+#define STOP_BIT 1
+
 // Writes an number of bytes to SPI
 void spi_uart_tx(char *tbuf, uint32_t len) {
+	bcm2835_gpio_fsel(RPI_GPIO_P1_19, BCM2835_GPIO_FSEL_OUTP); // MOSI
+	bcm2835_gpio_clr(RPI_GPIO_P1_19); //idle low
+	bcm2835_delayMicroseconds(4);
+	bcm2835_gpio_fsel(RPI_GPIO_P1_19, BCM2835_GPIO_FSEL_ALT0);
+	
 	volatile uint32_t* paddr = bcm2835_spi0 + BCM2835_SPI0_CS/4;
 	volatile uint32_t* fifo = bcm2835_spi0 + BCM2835_SPI0_FIFO/4;
 
@@ -54,12 +63,11 @@ void spi_uart_tx(char *tbuf, uint32_t len) {
 			;
 		
 		// Write to FIFO, no barrier
-		bcm2835_peri_write_nb(fifo, reverse_bits(tbuf[i])+0x000);
+		bcm2835_peri_write_nb(fifo, reverse_bits(tbuf[i])+STOP_BIT);
 		
 		// Read from FIFO to prevent stalling
 		while (bcm2835_peri_read(paddr) & BCM2835_SPI0_CS_RXD)
 			(void) bcm2835_peri_read_nb(fifo);
-		bcm2835_gpio_fsel(RPI_GPIO_P1_19, BCM2835_GPIO_FSEL_ALT0);
 	}
 	
 	// Wait for DONE to be set
@@ -99,7 +107,7 @@ int main(int argc, char **argv) {
 		if(i==('\n'+1))
 			i='a';
 		
-		bcm2835_delay(10);
+		bcm2835_delay(100);
 	}
 	
 	bcm2835_close();
